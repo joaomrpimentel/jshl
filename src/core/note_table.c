@@ -2,51 +2,107 @@
  * @file note_table.c
  * @brief Implementation of musical note frequency lookup
  * @author joaomrpimentel
- * @version 1.0
+ * @version 1.1
  */
 
 #include <string.h>
+#include <ctype.h>
+#include <math.h>
 #include "note_table.h"
 
+/**
+ * @brief Converts note name to MIDI note number
+ * @param note_name Scientific pitch notation (e.g., "C4", "F#3")
+ * @return MIDI note number (0-127), or -1 if invalid
+ * 
+ * MIDI note numbering:
+ * - C-1 = 0, C0 = 12, C4 (middle C) = 60, A4 = 69, G9 = 127
+ * - Each octave spans 12 semitones
+ */
+static int note_to_midi(const char* note_name) {
+    if (!note_name || strlen(note_name) < 2) {
+        return -1;
+    }
+    
+    // Parse note letter (C, D, E, F, G, A, B)
+    char note_letter = toupper(note_name[0]);
+    int note_offset;
+    
+    switch (note_letter) {
+        case 'C': note_offset = 0; break;
+        case 'D': note_offset = 2; break;
+        case 'E': note_offset = 4; break;
+        case 'F': note_offset = 5; break;
+        case 'G': note_offset = 7; break;
+        case 'A': note_offset = 9; break;
+        case 'B': note_offset = 11; break;
+        default: return -1;
+    }
+    
+    // Parse accidental (# or b)
+    int accidental = 0;
+    int octave_pos = 1;
+    
+    if (note_name[1] == '#') {
+        accidental = 1;
+        octave_pos = 2;
+    } else if (note_name[1] == 'b') {
+        accidental = -1;
+        octave_pos = 2;
+    }
+    
+    // Parse octave number (can be negative or two digits)
+    if (!isdigit(note_name[octave_pos]) && note_name[octave_pos] != '-') {
+        return -1;
+    }
+    
+    int octave;
+    if (note_name[octave_pos] == '-') {
+        // Negative octave (e.g., "C-1")
+        if (!isdigit(note_name[octave_pos + 1])) {
+            return -1;
+        }
+        octave = -(note_name[octave_pos + 1] - '0');
+    } else {
+        octave = note_name[octave_pos] - '0';
+        
+        // Handle two-digit octave numbers (e.g., "C10")
+        if (note_name[octave_pos + 1] && isdigit(note_name[octave_pos + 1])) {
+            octave = octave * 10 + (note_name[octave_pos + 1] - '0');
+        }
+    }
+    
+    // Calculate MIDI note number
+    // MIDI: C-1 = 0, C0 = 12, C4 = 60
+    int midi_note = (octave + 1) * 12 + note_offset + accidental;
+    
+    // Validate range (MIDI: 0-127)
+    if (midi_note < 0 || midi_note > 127) {
+        return -1;
+    }
+    
+    return midi_note;
+}
+
+/**
+ * @brief Converts MIDI note number to frequency
+ * @param midi_note MIDI note number (0-127)
+ * @return Frequency in Hz using equal temperament
+ * 
+ * Formula: f = 440 * 2^((n - 69) / 12)
+ * Where n is MIDI note number, 69 = A4 = 440 Hz
+ */
+static float midi_to_freq(int midi_note) {
+    // A4 (MIDI note 69) = 440 Hz
+    return 440.0f * powf(2.0f, (midi_note - 69) / 12.0f);
+}
+
 float get_note_freq(const char* note_name) {
-    if (strcmp(note_name, "C3") == 0) return 130.81f;
-    if (strcmp(note_name, "C#3") == 0 || strcmp(note_name, "Db3") == 0) return 138.59f;
-    if (strcmp(note_name, "D3") == 0) return 146.83f;
-    if (strcmp(note_name, "D#3") == 0 || strcmp(note_name, "Eb3") == 0) return 155.56f;
-    if (strcmp(note_name, "E3") == 0) return 164.81f;
-    if (strcmp(note_name, "F3") == 0) return 174.61f;
-    if (strcmp(note_name, "F#3") == 0 || strcmp(note_name, "Gb3") == 0) return 185.00f;
-    if (strcmp(note_name, "G3") == 0) return 196.00f;
-    if (strcmp(note_name, "G#3") == 0 || strcmp(note_name, "Ab3") == 0) return 207.65f;
-    if (strcmp(note_name, "A3") == 0) return 220.00f;
-    if (strcmp(note_name, "A#3") == 0 || strcmp(note_name, "Bb3") == 0) return 233.08f;
-    if (strcmp(note_name, "B3") == 0) return 246.94f;
+    int midi_note = note_to_midi(note_name);
     
-    if (strcmp(note_name, "C4") == 0) return 261.63f;
-    if (strcmp(note_name, "C#4") == 0 || strcmp(note_name, "Db4") == 0) return 277.18f;
-    if (strcmp(note_name, "D4") == 0) return 293.66f;
-    if (strcmp(note_name, "D#4") == 0 || strcmp(note_name, "Eb4") == 0) return 311.13f;
-    if (strcmp(note_name, "E4") == 0) return 329.63f;
-    if (strcmp(note_name, "F4") == 0) return 349.23f;
-    if (strcmp(note_name, "F#4") == 0 || strcmp(note_name, "Gb4") == 0) return 369.99f;
-    if (strcmp(note_name, "G4") == 0) return 392.00f;
-    if (strcmp(note_name, "G#4") == 0 || strcmp(note_name, "Ab4") == 0) return 415.30f;
-    if (strcmp(note_name, "A4") == 0) return 440.00f;
-    if (strcmp(note_name, "A#4") == 0 || strcmp(note_name, "Bb4") == 0) return 466.16f;
-    if (strcmp(note_name, "B4") == 0) return 493.88f;
+    if (midi_note < 0) {
+        return 0.0f;
+    }
     
-    if (strcmp(note_name, "C5") == 0) return 523.25f;
-    if (strcmp(note_name, "C#5") == 0 || strcmp(note_name, "Db5") == 0) return 554.37f;
-    if (strcmp(note_name, "D5") == 0) return 587.33f;
-    if (strcmp(note_name, "D#5") == 0 || strcmp(note_name, "Eb5") == 0) return 622.25f;
-    if (strcmp(note_name, "E5") == 0) return 659.25f;
-    if (strcmp(note_name, "F5") == 0) return 698.46f;
-    if (strcmp(note_name, "F#5") == 0 || strcmp(note_name, "Gb5") == 0) return 739.99f;
-    if (strcmp(note_name, "G5") == 0) return 783.99f;
-    if (strcmp(note_name, "G#5") == 0 || strcmp(note_name, "Ab5") == 0) return 830.61f;
-    if (strcmp(note_name, "A5") == 0) return 880.00f;
-    if (strcmp(note_name, "A#5") == 0 || strcmp(note_name, "Bb5") == 0) return 932.33f;
-    if (strcmp(note_name, "B5") == 0) return 987.77f;
-    
-    return 0.0f;
+    return midi_to_freq(midi_note);
 }
